@@ -1,11 +1,14 @@
 # .github/workflows/build-cppcheck.yml
-name: Build Cppcheck Binaries
+name: Build & Release Cppcheck Binaries
 
 on:
   workflow_dispatch:
   push:
     tags:
       - "cppcheck-*"
+
+permissions:
+  contents: write  # Für Release‑Erstellung
 
 jobs:
   build:
@@ -24,6 +27,8 @@ jobs:
           - os: windows-latest
             arch: x64
 
+    outputs:
+      version: ${{ steps.latest.outputs.tag }}
     env:
       CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
 
@@ -31,15 +36,24 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Determine latest Cppcheck tag
+      - name: Determine latest Cppcheck tag (Linux/macOS)
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
         id: latest
         run: |
           LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${CPPCHECK_REPO} \
             | awk -F/ '{print $NF}' \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
             | tail -n1)
-          echo "Latest tag: ${LATEST_TAG}"
           echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Determine latest Cppcheck tag (Windows)
+        if: startsWith(matrix.os, 'windows')
+        id: latest
+        shell: pwsh
+        run: |
+          $tags = git ls-remote --tags --sort="-v:refname" $env:CPPCHECK_REPO | ForEach-Object { ($_ -split '/')[-1] } | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Sort-Object { [Version]$_ } -Descending | Select-Object -First 1
+          Write-Output "tag=$tags"
+          echo "tag=$tags" >> $env:GITHUB_OUTPUT
 
       - name: Install dependencies (Linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -57,14 +71,13 @@ jobs:
 
       - name: Install dependencies (Windows)
         if: startsWith(matrix.os, 'windows')
-        shell: powershell
+        shell: pwsh
         run: |
           choco install -y git cmake
-          # MSVC ist auf windows-latest bereits vorinstalliert
 
       - name: Clone Cppcheck at latest tag
         run: |
-          git clone --depth 1 "${CPPCHECK_REPO}" cppcheck-src
+          git clone --depth 1 "${{ env.CPPCHECK_REPO }}" cppcheck-src
           cd cppcheck-src
           git fetch --tags --depth 1
           git checkout "refs/tags/${{ steps.latest.outputs.tag }}"
@@ -81,7 +94,7 @@ jobs:
       - name: Configure (Windows)
         if: startsWith(matrix.os, 'windows')
         working-directory: cppcheck-src
-        shell: powershell
+        shell: pwsh
         run: |
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
@@ -99,7 +112,7 @@ jobs:
       - name: Build (Windows)
         if: startsWith(matrix.os, 'windows')
         working-directory: cppcheck-src
-        shell: powershell
+        shell: pwsh
         run: |
           cmake --build build --config Release --parallel
 
@@ -109,17 +122,42 @@ jobs:
         run: |
           mkdir -p out
           cp build/bin/cppcheck out/cppcheck
+          chmod +x out/cppcheck  # Execute Flag setzen
 
       - name: Collect binary (Windows)
         if: startsWith(matrix.os, 'windows')
         working-directory: cppcheck-src
-        shell: powershell
+        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path out | Out-Null
+          New-Item -ItemType Directory -Force -Path out
           Copy-Item "build/Release/cppcheck.exe" "out/cppcheck.exe"
 
-      - name: Upload artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: cppcheck-${{ steps.latest.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}
           path: cppcheck-src/out/*
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: cppcheck-${{ needs.build.outputs.version }}
+          name: Cppcheck ${{ needs.build.outputs.version }} Binaries
+          body: |
+            Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries for all platforms.
+            
+            - Linux x64: `cppcheck-linux-x64`
+            - macOS x64: `cppcheck-macos-x64`
+            - macOS arm64: `cppcheck-macos-arm64`
+            - Windows x64: `cppcheck-windows-x64`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
