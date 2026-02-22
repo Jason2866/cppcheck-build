@@ -1,5 +1,5 @@
-# .github/workflows/build-cppcheck.yml
-name: Build & Release Cppcheck Binaries
+# .github/workflows/build.yml
+name: Build Cppcheck Binaries
 
 on:
   workflow_dispatch:
