@@ -28,7 +28,7 @@ jobs:
             arch: x64
 
     outputs:
-      version: ${{ steps.latest.outputs.tag }}
+      version: ${{ steps.get_version.outputs.tag }}
     env:
       CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
 
@@ -36,9 +36,9 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Determine latest Cppcheck tag (Linux/macOS)
+      - name: Get latest Cppcheck tag (Linux/macOS)
         if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
-        id: latest
+        id: get_version_unix
         run: |
           LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${CPPCHECK_REPO} \
             | awk -F/ '{print $NF}' \
@@ -46,14 +46,23 @@ jobs:
             | tail -n1)
           echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
 
-      - name: Determine latest Cppcheck tag (Windows)
+      - name: Get latest Cppcheck tag (Windows)
         if: startsWith(matrix.os, 'windows')
-        id: latest
+        id: get_version_win
         shell: pwsh
         run: |
           $tags = git ls-remote --tags --sort="-v:refname" $env:CPPCHECK_REPO | ForEach-Object { ($_ -split '/')[-1] } | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Sort-Object { [Version]$_ } -Descending | Select-Object -First 1
           Write-Output "tag=$tags"
           echo "tag=$tags" >> $env:GITHUB_OUTPUT
+
+      - name: Set version output
+        id: get_version
+        run: |
+          if [[ "${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos') }}" ]]; then
+            echo "tag=${{ steps.get_version_unix.outputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ steps.get_version_win.outputs.tag }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Install dependencies (Linux)
         if: startsWith(matrix.os, 'ubuntu')
@@ -80,7 +89,7 @@ jobs:
           git clone --depth 1 "${{ env.CPPCHECK_REPO }}" cppcheck-src
           cd cppcheck-src
           git fetch --tags --depth 1
-          git checkout "refs/tags/${{ steps.latest.outputs.tag }}"
+          git checkout "refs/tags/${{ steps.get_version.outputs.tag }}"
 
       - name: Configure (Linux/macOS)
         if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
@@ -122,7 +131,7 @@ jobs:
         run: |
           mkdir -p out
           cp build/bin/cppcheck out/cppcheck
-          chmod +x out/cppcheck  # Execute Flag setzen
+          chmod +x out/cppcheck  # Execute Flag
 
       - name: Collect binary (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -135,7 +144,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cppcheck-${{ steps.latest.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: cppcheck-${{ steps.get_version.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}
           path: cppcheck-src/out/*
 
   release:
@@ -153,10 +162,10 @@ jobs:
           tag_name: cppcheck-${{ needs.build.outputs.version }}
           name: Cppcheck ${{ needs.build.outputs.version }} Binaries
           body: |
-            Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries for all platforms.
+            Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries:
             
             - Linux x64: `cppcheck-linux-x64`
-            - macOS x64: `cppcheck-macos-x64`
+            - macOS x64: `cppcheck-macos-x64` 
             - macOS arm64: `cppcheck-macos-arm64`
             - Windows x64: `cppcheck-windows-x64`
         env:
