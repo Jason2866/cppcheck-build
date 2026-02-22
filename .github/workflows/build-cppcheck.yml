@@ -79,10 +79,7 @@ jobs:
 
       - name: Clone Cppcheck at latest tag
         run: |
-          git clone --depth 1 "${{ env.CPPCHECK_REPO }}" cppcheck-src
-          cd cppcheck-src
-          git fetch --tags --depth 1
-          git checkout "refs/tags/${{ steps.get_version.outputs.tag }}"
+          git clone --depth 1 --branch "${{ steps.get_version.outputs.tag }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -156,7 +153,7 @@ jobs:
             Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries:
             
             - Linux x64: `cppcheck-linux-x64`
-            - macOS x64: `cppcheck-macos-x64` 
+            - macOS x64: `cppcheck-macos-x64`
             - macOS arm64: `cppcheck-macos-arm64`
             - Windows x64: `cppcheck-windows-x64`
         env:
