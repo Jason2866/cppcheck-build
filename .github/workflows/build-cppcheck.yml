@@ -41,15 +41,13 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" != "Windows" ]; then
-            # Unix: Bash/Awk
             LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
               | awk -F/ '{print $NF}' \
               | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
               | tail -n1)
           else
-            # Windows: PowerShell (inline)
             LATEST_TAG=$(git ls-remote --tags --sort="-v:refname" ${{ env.CPPCHECK_REPO }} \
-              | powershell -Command "
+              | pwsh -Command "
                 \$tags = \$input | ForEach-Object { (\$_.Split('/'))[-1] } |
                          Where-Object { \$_ -match '^\d+\.\d+\.\d+$' } |
                          Sort-Object { [Version]\$_ } -Descending |
@@ -76,7 +74,16 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install -y git cmake --no-progress
+          choco install -y git cmake vcpkg --no-progress
+          # PCRE über vcpkg für Windows (erforderlich für HAVE_RULES=ON)
+
+      - name: Setup vcpkg (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "C:/vcpkg/vcpkg.exe" install pcre:x64-windows-static --triplet x64-windows-static
+          echo "VCPKG_ROOT=C:/vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "VCPKG_TARGET_TRIPLET=x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Clone Cppcheck at latest tag
         run: |
@@ -95,11 +102,15 @@ jobs:
         if: runner.os == 'Windows'
         working-directory: cppcheck-src
         shell: pwsh
+        env:
+          CMAKE_TOOLCHAIN_FILE: ${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
         run: |
           cmake -S . -B build `
             -G "Visual Studio 17 2022" `
             -A x64 `
             -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="${env:VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET="${env:VCPKG_TARGET_TRIPLET}" `
             -DBUILD_GUI=OFF `
             -DHAVE_RULES=ON
 
@@ -121,7 +132,7 @@ jobs:
           mkdir -p out
           cp build/bin/cppcheck out/cppcheck
           chmod +x out/cppcheck
-          file out/cppcheck  # Verify executable
+          file out/cppcheck
 
       - name: Collect binary (Windows)
         if: runner.os == 'Windows'
@@ -152,13 +163,13 @@ jobs:
           tag_name: cppcheck-${{ needs.build.outputs.version }}
           name: Cppcheck ${{ needs.build.outputs.version }} Binaries
           body: |
-            **Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries for all platforms:**
+            **Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries:**
             
-            - `cppcheck-linux-x64/cppcheck` (executable)
-            - `cppcheck-macos-x64/cppcheck` (executable)  
-            - `cppcheck-macos-arm64/cppcheck` (executable)
-            - `cppcheck-windows-x64/cppcheck.exe`
+            - `cppcheck-linux-x64/cppcheck` ✅ executable
+            - `cppcheck-macos-x64/cppcheck` ✅ executable  
+            - `cppcheck-macos-arm64/cppcheck` ✅ executable
+            - `cppcheck-windows-x64/cppcheck.exe` ✅ PCRE‑enabled
             
-            Ready for pioarduino integration!
+            Ready for pioarduino!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
