@@ -1,0 +1,113 @@
+# .github/workflows/build-cppcheck.yml
+name: Build Cppcheck Binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "cppcheck-*"
+
+jobs:
+  build:
+    name: Build Cppcheck (${{ matrix.os }} / ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+          - os: macos-latest
+            arch: x64
+          - os: macos-latest
+            arch: arm64
+          - os: windows-latest
+            arch: x64
+
+    env:
+      CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
+      CPPCHECK_TAG: master   # oder z.B. 2.19, wenn du fix eine Version willst
+
+    steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git cmake g++ make \
+            libpcre3-dev
+
+      - name: Install dependencies (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          brew update
+          brew install cmake pcre
+
+      - name: Install dependencies (Windows)
+        if: startsWith(matrix.os, 'windows')
+        shell: powershell
+        run: |
+          choco install -y git cmake
+          # MSVC ist auf windows-latest bereits vorinstalliert
+
+      - name: Clone Cppcheck
+        run: |
+          git clone --depth 1 --branch "${CPPCHECK_TAG}" "${CPPCHECK_REPO}" cppcheck-src
+
+      - name: Configure (Linux/macOS)
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        working-directory: cppcheck-src
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_GUI=OFF \
+            -DHAVE_RULES=ON
+
+      - name: Configure (Windows)
+        if: startsWith(matrix.os, 'windows')
+        working-directory: cppcheck-src
+        shell: powershell
+        run: |
+          cmake -S . -B build `
+            -G "Visual Studio 17 2022" `
+            -A x64 `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_GUI=OFF `
+            -DHAVE_RULES=ON
+
+      - name: Build (Linux/macOS)
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        working-directory: cppcheck-src
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Build (Windows)
+        if: startsWith(matrix.os, 'windows')
+        working-directory: cppcheck-src
+        shell: powershell
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Collect binary (Linux/macOS)
+        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+        working-directory: cppcheck-src
+        run: |
+          mkdir -p out
+          cp build/bin/cppcheck out/cppcheck
+
+      - name: Collect binary (Windows)
+        if: startsWith(matrix.os, 'windows')
+        working-directory: cppcheck-src
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item "build/Release/cppcheck.exe" "out/cppcheck.exe"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cppcheck-${{ matrix.os }}-${{ matrix.arch }}
+          path: cppcheck-src/out/*
