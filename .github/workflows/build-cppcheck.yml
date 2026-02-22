@@ -36,28 +36,29 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Get latest Cppcheck tag (Unix)
-        if: runner.os != 'Windows'
-        id: get_version_unix
-        run: |
-          LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
-            | awk -F/ '{print $NF}' \
-            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-            | tail -n1)
-          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
-
-      - name: Get latest Cppcheck tag (Windows)
-        if: runner.os == 'Windows'
-        id: get_version_win
-        shell: pwsh
-        run: |
-          $tags = git ls-remote --tags --sort="-v:refname" $env:CPPCHECK_REPO | ForEach-Object { ($_ -split '/')[-1] } | Where-Object { $_ -match '^\d+\.\d+\.\d+$' } | Sort-Object { [Version]$_ } -Descending | Select-Object -First 1
-          Write-Output "tag=$tags"
-          echo "tag=$tags" >> $env:GITHUB_OUTPUT
-
-      - name: Set version output
+      - name: Get latest Cppcheck tag
         id: get_version
-        run: echo "tag=${{ steps.get_version_unix.outputs.tag || steps.get_version_win.outputs.tag }}" >> $GITHUB_OUTPUT
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" != "Windows" ]; then
+            # Unix: Bash/Awk
+            LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
+              | awk -F/ '{print $NF}' \
+              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+              | tail -n1)
+          else
+            # Windows: PowerShell (inline)
+            LATEST_TAG=$(git ls-remote --tags --sort="-v:refname" ${{ env.CPPCHECK_REPO }} \
+              | powershell -Command "
+                \$tags = \$input | ForEach-Object { (\$_.Split('/'))[-1] } |
+                         Where-Object { \$_ -match '^\d+\.\d+\.\d+$' } |
+                         Sort-Object { [Version]\$_ } -Descending |
+                         Select-Object -First 1;
+                \$tags"
+              )
+          fi
+          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "Using Cppcheck version: ${LATEST_TAG}"
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -75,7 +76,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          choco install -y git cmake
+          choco install -y git cmake --no-progress
 
       - name: Clone Cppcheck at latest tag
         run: |
@@ -120,6 +121,7 @@ jobs:
           mkdir -p out
           cp build/bin/cppcheck out/cppcheck
           chmod +x out/cppcheck
+          file out/cppcheck  # Verify executable
 
       - name: Collect binary (Windows)
         if: runner.os == 'Windows'
@@ -150,11 +152,13 @@ jobs:
           tag_name: cppcheck-${{ needs.build.outputs.version }}
           name: Cppcheck ${{ needs.build.outputs.version }} Binaries
           body: |
-            Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries:
+            **Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries for all platforms:**
             
-            - Linux x64: `cppcheck-linux-x64`
-            - macOS x64: `cppcheck-macos-x64`
-            - macOS arm64: `cppcheck-macos-arm64`
-            - Windows x64: `cppcheck-windows-x64`
+            - `cppcheck-linux-x64/cppcheck` (executable)
+            - `cppcheck-macos-x64/cppcheck` (executable)  
+            - `cppcheck-macos-arm64/cppcheck` (executable)
+            - `cppcheck-windows-x64/cppcheck.exe`
+            
+            Ready for pioarduino integration!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
