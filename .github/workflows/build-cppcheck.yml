@@ -1,5 +1,5 @@
-# .github/workflows/build.yml
-name: Build Cppcheck Binaries
+# .github/workflows/build-cppcheck.yml
+name: Build & Release Cppcheck Binaries
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
       - "cppcheck-*"
 
 permissions:
-  contents: write  # Für Release‑Erstellung
+  contents: write
 
 jobs:
   build:
@@ -36,18 +36,18 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Get latest Cppcheck tag (Linux/macOS)
-        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+      - name: Get latest Cppcheck tag (Unix)
+        if: runner.os != 'Windows'
         id: get_version_unix
         run: |
-          LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${CPPCHECK_REPO} \
+          LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
             | awk -F/ '{print $NF}' \
             | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
             | tail -n1)
           echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
 
       - name: Get latest Cppcheck tag (Windows)
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         id: get_version_win
         shell: pwsh
         run: |
@@ -57,29 +57,22 @@ jobs:
 
       - name: Set version output
         id: get_version
-        run: |
-          if [[ "${{ startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos') }}" ]]; then
-            echo "tag=${{ steps.get_version_unix.outputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${{ steps.get_version_win.outputs.tag }}" >> $GITHUB_OUTPUT
-          fi
+        run: echo "tag=${{ steps.get_version_unix.outputs.tag || steps.get_version_win.outputs.tag }}" >> $GITHUB_OUTPUT
 
       - name: Install dependencies (Linux)
-        if: startsWith(matrix.os, 'ubuntu')
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git cmake g++ make \
-            libpcre3-dev
+          sudo apt-get install -y git cmake g++ make libpcre3-dev
 
       - name: Install dependencies (macOS)
-        if: startsWith(matrix.os, 'macos')
+        if: runner.os == 'macOS'
         run: |
           brew update
           brew install cmake pcre
 
       - name: Install dependencies (Windows)
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install -y git cmake
@@ -91,8 +84,8 @@ jobs:
           git fetch --tags --depth 1
           git checkout "refs/tags/${{ steps.get_version.outputs.tag }}"
 
-      - name: Configure (Linux/macOS)
-        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
         working-directory: cppcheck-src
         run: |
           cmake -S . -B build \
@@ -101,7 +94,7 @@ jobs:
             -DHAVE_RULES=ON
 
       - name: Configure (Windows)
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         working-directory: cppcheck-src
         shell: pwsh
         run: |
@@ -112,29 +105,27 @@ jobs:
             -DBUILD_GUI=OFF `
             -DHAVE_RULES=ON
 
-      - name: Build (Linux/macOS)
-        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
         working-directory: cppcheck-src
-        run: |
-          cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel
 
       - name: Build (Windows)
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         working-directory: cppcheck-src
         shell: pwsh
-        run: |
-          cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel
 
-      - name: Collect binary (Linux/macOS)
-        if: startsWith(matrix.os, 'ubuntu') || startsWith(matrix.os, 'macos')
+      - name: Collect binary (Unix)
+        if: runner.os != 'Windows'
         working-directory: cppcheck-src
         run: |
           mkdir -p out
           cp build/bin/cppcheck out/cppcheck
-          chmod +x out/cppcheck  # Execute Flag
+          chmod +x out/cppcheck
 
       - name: Collect binary (Windows)
-        if: startsWith(matrix.os, 'windows')
+        if: runner.os == 'Windows'
         working-directory: cppcheck-src
         shell: pwsh
         run: |
