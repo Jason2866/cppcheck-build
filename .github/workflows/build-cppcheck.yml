@@ -160,6 +160,12 @@ jobs:
 
       - name: Display structure of downloaded artifacts
         run: ls -R artifacts/
+      - name: Rename binaries to unique names
+        run: |
+          cp artifacts/cppcheck-linux-x64/cppcheck    artifacts/cppcheck-linux-x64
+          cp artifacts/cppcheck-macos-x64/cppcheck    artifacts/cppcheck-macos-x64
+          cp artifacts/cppcheck-macos-arm64/cppcheck  artifacts/cppcheck-macos-arm64
+          cp artifacts/cppcheck-windows-x64/cppcheck.exe artifacts/cppcheck-windows-x64.exe
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -167,17 +173,17 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: Cppcheck ${{ needs.get-version.outputs.version }} Binaries
           files: |
-            artifacts/cppcheck-linux-x64/cppcheck
-            artifacts/cppcheck-macos-x64/cppcheck
-            artifacts/cppcheck-macos-arm64/cppcheck
-            artifacts/cppcheck-windows-x64/cppcheck.exe
+            artifacts/cppcheck-linux-x64
+            artifacts/cppcheck-macos-x64
+            artifacts/cppcheck-macos-arm64
+            artifacts/cppcheck-windows-x64.exe
           body: |
             **Auto‑built Cppcheck ${{ needs.get-version.outputs.version }} binaries:**
 
-            - `cppcheck-linux-x64/cppcheck` ✅ executable
-            - `cppcheck-macos-x64/cppcheck` ✅ executable  
-            - `cppcheck-macos-arm64/cppcheck` ✅ executable
-            - `cppcheck-windows-x64/cppcheck.exe` ✅ PCRE‑enabled
+            - `cppcheck-linux-x64` ✅ executable
+            - `cppcheck-macos-x64` ✅ executable  
+            - `cppcheck-macos-arm64` ✅ executable
+            - `cppcheck-windows-x64.exe` ✅ PCRE‑enabled
 
             Ready for pioarduino!
         env:
