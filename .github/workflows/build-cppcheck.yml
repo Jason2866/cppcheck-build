@@ -70,13 +70,6 @@ jobs:
           brew update
           brew install cmake pcre
 
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # git, cmake and vcpkg are pre-installed on windows-latest runners
-          # nothing extra needed here
-
       - name: Setup vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -139,7 +132,15 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out
-          Copy-Item "build/Release/cppcheck.exe" "out/cppcheck.exe"
+
+          # Suche das Binary dynamisch, unabhängig vom cmake-Ausgabepfad
+          $binary = Get-ChildItem -Recurse -Filter "cppcheck.exe" build | Select-Object -First 1
+          if ($null -eq $binary) {
+            Write-Error "cppcheck.exe not found in build directory!"
+            exit 1
+          }
+          Write-Host "Found binary at: $($binary.FullName)"
+          Copy-Item $binary.FullName "out/cppcheck.exe"
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
