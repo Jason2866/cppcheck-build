@@ -31,25 +31,46 @@ jobs:
           echo "Using Cppcheck version: ${LATEST_TAG}"
 
   build:
-    name: Build Cppcheck (${{ matrix.os }} / ${{ matrix.arch }})
+    name: Build Cppcheck (${{ matrix.artifact }})
     needs: get-version
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            arch: x64
+          # ── Native GitHub-hosted runners ──────────────────────────────
+          - runner: ubuntu-latest
             artifact: cppcheck-linux-x64
-          - os: macos-latest
-            arch: x64
+            cross: false
+
+          - runner: ubuntu-24.04-arm
+            artifact: cppcheck-linux-arm64
+            cross: false
+
+          - runner: macos-latest
             artifact: cppcheck-macos-x64
-          - os: macos-latest
-            arch: arm64
+            cross: false
+
+          - runner: macos-latest
             artifact: cppcheck-macos-arm64
-          - os: windows-latest
-            arch: x64
+            cross: false
+
+          - runner: windows-latest
             artifact: cppcheck-windows-x64
+            cross: false
+
+          # ── QEMU-emulated via uraimo/run-on-arch-action ───────────────
+          - runner: ubuntu-latest
+            artifact: cppcheck-linux-armv7
+            cross: true
+            qemu_arch: armv7
+            qemu_distro: ubuntu22.04
+
+          - runner: ubuntu-latest
+            artifact: cppcheck-linux-armv6
+            cross: true
+            qemu_arch: armv6
+            qemu_distro: bullseye
 
     env:
       CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
@@ -59,18 +80,21 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
 
-      - name: Install dependencies (Linux)
-        if: runner.os == 'Linux'
+      # ── Dependencies: native Linux ──────────────────────────────────
+      - name: Install dependencies (Linux native)
+        if: runner.os == 'Linux' && matrix.cross == false
         run: |
           sudo apt-get update
           sudo apt-get install -y git cmake g++ make libpcre3-dev
 
+      # ── Dependencies: macOS ─────────────────────────────────────────
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
           brew install cmake pcre
 
+      # ── Dependencies + Build: Windows ───────────────────────────────
       - name: Setup vcpkg (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -80,12 +104,15 @@ jobs:
           echo "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           echo "VCPKG_TARGET_TRIPLET=x64-windows-static" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      # ── Clone (all native builds) ────────────────────────────────────
       - name: Clone Cppcheck at latest tag
+        if: matrix.cross == false
         run: |
           git clone --depth 1 --branch "${{ env.CPPCHECK_VERSION }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
 
+      # ── Configure + Build: Unix native ──────────────────────────────
       - name: Configure (Unix)
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.cross == false
         working-directory: cppcheck-src
         run: |
           cmake -S . -B build \
@@ -107,8 +134,8 @@ jobs:
             -DBUILD_GUI=OFF `
             -DHAVE_RULES=ON
 
-      - name: Build (Unix)
-        if: runner.os != 'Windows'
+      - name: Build (Unix native)
+        if: runner.os != 'Windows' && matrix.cross == false
         working-directory: cppcheck-src
         run: cmake --build build --config Release --parallel
 
@@ -118,8 +145,9 @@ jobs:
         shell: pwsh
         run: cmake --build build --config Release --parallel
 
-      - name: Collect binary (Unix)
-        if: runner.os != 'Windows'
+      # ── Collect binary: Unix native ──────────────────────────────────
+      - name: Collect binary (Unix native)
+        if: runner.os != 'Windows' && matrix.cross == false
         working-directory: cppcheck-src
         run: |
           mkdir -p out
@@ -141,6 +169,30 @@ jobs:
           Write-Host "Found binary at: $($binary.FullName)"
           Copy-Item $binary.FullName "out/cppcheck.exe"
 
+      # ── QEMU cross builds (armv7, armv6) ─────────────────────────────
+      - name: Build in QEMU (${{ matrix.qemu_arch }})
+        if: matrix.cross == true
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: ${{ matrix.qemu_arch }}
+          distro: ${{ matrix.qemu_distro }}
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update -y
+            apt-get install -y git cmake g++ make libpcre3-dev
+          run: |
+            git clone --depth 1 --branch "${{ env.CPPCHECK_VERSION }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
+            cmake -S cppcheck-src -B cppcheck-src/build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_GUI=OFF \
+              -DHAVE_RULES=ON
+            cmake --build cppcheck-src/build --config Release --parallel
+            mkdir -p cppcheck-src/out
+            cp cppcheck-src/build/bin/cppcheck cppcheck-src/out/cppcheck
+            chmod +x cppcheck-src/out/cppcheck
+            file cppcheck-src/out/cppcheck
+
+      # ── Upload ────────────────────────────────────────────────────────
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -158,13 +210,14 @@ jobs:
         with:
           path: artifacts
 
-      - name: Display structure of downloaded artifacts
-        run: ls -R artifacts/
       - name: Rename binaries to unique names
         run: |
-          cp artifacts/cppcheck-linux-x64/cppcheck      artifacts/cppcheck-linux-x64-bin
-          cp artifacts/cppcheck-macos-x64/cppcheck      artifacts/cppcheck-macos-x64-bin
-          cp artifacts/cppcheck-macos-arm64/cppcheck    artifacts/cppcheck-macos-arm64-bin
+          cp artifacts/cppcheck-linux-x64/cppcheck       artifacts/cppcheck-linux-x64-bin
+          cp artifacts/cppcheck-linux-arm64/cppcheck     artifacts/cppcheck-linux-arm64-bin
+          cp artifacts/cppcheck-linux-armv7/cppcheck     artifacts/cppcheck-linux-armv7-bin
+          cp artifacts/cppcheck-linux-armv6/cppcheck     artifacts/cppcheck-linux-armv6-bin
+          cp artifacts/cppcheck-macos-x64/cppcheck       artifacts/cppcheck-macos-x64-bin
+          cp artifacts/cppcheck-macos-arm64/cppcheck     artifacts/cppcheck-macos-arm64-bin
           cp artifacts/cppcheck-windows-x64/cppcheck.exe artifacts/cppcheck-windows-x64.exe
 
       - name: Create Release
@@ -174,16 +227,24 @@ jobs:
           name: Cppcheck ${{ needs.get-version.outputs.version }} Binaries
           files: |
             artifacts/cppcheck-linux-x64-bin
+            artifacts/cppcheck-linux-arm64-bin
+            artifacts/cppcheck-linux-armv7-bin
+            artifacts/cppcheck-linux-armv6-bin
             artifacts/cppcheck-macos-x64-bin
             artifacts/cppcheck-macos-arm64-bin
             artifacts/cppcheck-windows-x64.exe
           body: |
             **Auto‑built Cppcheck ${{ needs.get-version.outputs.version }} binaries:**
 
-            - `cppcheck-linux-x64-bin` ✅ executable
-            - `cppcheck-macos-x64-bin` ✅ executable  
-            - `cppcheck-macos-arm64-bin` ✅ executable
-            - `cppcheck-windows-x64.exe` ✅ PCRE‑enabled
+            | Binary | Arch | Method |
+            |--------|------|--------|
+            | `cppcheck-linux-x64-bin` | Linux x86_64 | native |
+            | `cppcheck-linux-arm64-bin` | Linux aarch64 | native (ubuntu-24.04-arm) |
+            | `cppcheck-linux-armv7-bin` | Linux ARMv7 | QEMU |
+            | `cppcheck-linux-armv6-bin` | Linux ARMv6 | QEMU |
+            | `cppcheck-macos-x64-bin` | macOS x86_64 | native |
+            | `cppcheck-macos-arm64-bin` | macOS Apple Silicon | native |
+            | `cppcheck-windows-x64.exe` | Windows x64 | native + PCRE |
 
             Ready for pioarduino!
         env:
