@@ -177,20 +177,24 @@ jobs:
           arch: ${{ matrix.qemu_arch }}
           distro: ${{ matrix.qemu_distro }}
           githubToken: ${{ github.token }}
+          dockerRunArgs: --volume "${{ github.workspace }}:/workspace"
           install: |
             apt-get update -y
             apt-get install -y git cmake g++ make libpcre3-dev
           run: |
+            cd /workspace
             git clone --depth 1 --branch "${{ env.CPPCHECK_VERSION }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
             cmake -S cppcheck-src -B cppcheck-src/build \
               -DCMAKE_BUILD_TYPE=Release \
               -DBUILD_GUI=OFF \
-              -DHAVE_RULES=ON
-            cmake --build cppcheck-src/build --config Release --parallel
+              -DHAVE_RULES=ON \
+              -DUSE_MATCHCOMPILER=OFF
+            cmake --build cppcheck-src/build --config Release --parallel --target cppcheck
             mkdir -p cppcheck-src/out
             cp cppcheck-src/build/bin/cppcheck cppcheck-src/out/cppcheck
             chmod +x cppcheck-src/out/cppcheck
             file cppcheck-src/out/cppcheck
+
 
       # ── Upload ────────────────────────────────────────────────────────
       - name: Upload build artifact
