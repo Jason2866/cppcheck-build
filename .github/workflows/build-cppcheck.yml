@@ -180,7 +180,7 @@ jobs:
           dockerRunArgs: --volume "${{ github.workspace }}:/workspace"
           install: |
             apt-get update -y
-            apt-get install -y git cmake g++ make libpcre3-dev
+            apt-get install -y git cmake g++ make libpcre3-dev file
           run: |
             cd /workspace
             git clone --depth 1 --branch "${{ env.CPPCHECK_VERSION }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
