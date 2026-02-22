@@ -11,8 +11,28 @@ permissions:
   contents: write
 
 jobs:
+  get-version:
+    name: Get Cppcheck Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.tag }}
+    env:
+      CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
+    steps:
+      - name: Get latest Cppcheck tag
+        id: get_version
+        shell: bash
+        run: |
+          LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
+            | awk -F/ '{print $NF}' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | tail -n1)
+          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
+          echo "Using Cppcheck version: ${LATEST_TAG}"
+
   build:
     name: Build Cppcheck (${{ matrix.os }} / ${{ matrix.arch }})
+    needs: get-version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -20,43 +40,24 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: x64
+            artifact: cppcheck-linux-x64
           - os: macos-latest
             arch: x64
+            artifact: cppcheck-macos-x64
           - os: macos-latest
             arch: arm64
+            artifact: cppcheck-macos-arm64
           - os: windows-latest
             arch: x64
+            artifact: cppcheck-windows-x64
 
-    outputs:
-      version: ${{ steps.get_version.outputs.tag }}
     env:
       CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
+      CPPCHECK_VERSION: ${{ needs.get-version.outputs.version }}
 
     steps:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
-
-      - name: Get latest Cppcheck tag
-        id: get_version
-        shell: bash
-        run: |
-          if [ "${{ runner.os }}" != "Windows" ]; then
-            LATEST_TAG=$(git ls-remote --tags --sort="v:refname" ${{ env.CPPCHECK_REPO }} \
-              | awk -F/ '{print $NF}' \
-              | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
-              | tail -n1)
-          else
-            LATEST_TAG=$(git ls-remote --tags --sort="-v:refname" ${{ env.CPPCHECK_REPO }} \
-              | pwsh -Command "
-                \$tags = \$input | ForEach-Object { (\$_.Split('/'))[-1] } |
-                         Where-Object { \$_ -match '^\d+\.\d+\.\d+$' } |
-                         Sort-Object { [Version]\$_ } -Descending |
-                         Select-Object -First 1;
-                \$tags"
-              )
-          fi
-          echo "tag=${LATEST_TAG}" >> $GITHUB_OUTPUT
-          echo "Using Cppcheck version: ${LATEST_TAG}"
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -81,7 +82,7 @@ jobs:
 
       - name: Clone Cppcheck at latest tag
         run: |
-          git clone --depth 1 --branch "${{ steps.get_version.outputs.tag }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
+          git clone --depth 1 --branch "${{ env.CPPCHECK_VERSION }}" "${{ env.CPPCHECK_REPO }}" cppcheck-src
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -132,8 +133,6 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out
-
-          # Suche das Binary dynamisch, unabhängig vom cmake-Ausgabepfad
           $binary = Get-ChildItem -Recurse -Filter "cppcheck.exe" build | Select-Object -First 1
           if ($null -eq $binary) {
             Write-Error "cppcheck.exe not found in build directory!"
@@ -145,25 +144,35 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cppcheck-${{ steps.get_version.outputs.tag }}-${{ matrix.os }}-${{ matrix.arch }}
+          name: ${{ matrix.artifact }}
           path: cppcheck-src/out/*
 
   release:
     name: Create Release
-    needs: build
+    needs: [get-version, build]
     runs-on: ubuntu-latest
     if: github.ref_type == 'tag'
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Display structure of downloaded artifacts
+        run: ls -R artifacts/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: cppcheck-${{ needs.build.outputs.version }}
-          name: Cppcheck ${{ needs.build.outputs.version }} Binaries
+          tag_name: ${{ github.ref_name }}
+          name: Cppcheck ${{ needs.get-version.outputs.version }} Binaries
+          files: |
+            artifacts/cppcheck-linux-x64/cppcheck
+            artifacts/cppcheck-macos-x64/cppcheck
+            artifacts/cppcheck-macos-arm64/cppcheck
+            artifacts/cppcheck-windows-x64/cppcheck.exe
           body: |
-            **Auto‑built Cppcheck ${{ needs.build.outputs.version }} binaries:**
+            **Auto‑built Cppcheck ${{ needs.get-version.outputs.version }} binaries:**
 
             - `cppcheck-linux-x64/cppcheck` ✅ executable
             - `cppcheck-macos-x64/cppcheck` ✅ executable  
