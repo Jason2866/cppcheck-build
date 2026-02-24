@@ -226,6 +226,7 @@ jobs:
       - name: Package artifacts
         run: |
           for dir in cppcheck-linux-x64 cppcheck-linux-arm64 cppcheck-linux-armv7 cppcheck-linux-armv6 cppcheck-macos-x64 cppcheck-macos-arm64; do
+            chmod +x "artifacts/${dir}/cppcheck"
             tar -czf "artifacts/${dir}.tar.gz" -C "artifacts/${dir}" .
           done
           cd artifacts/cppcheck-windows-x64 && zip -r ../cppcheck-windows-x64.zip . && cd ../..
