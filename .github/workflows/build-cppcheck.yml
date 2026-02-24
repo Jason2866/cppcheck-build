@@ -157,6 +157,7 @@ jobs:
           chmod +x out/cppcheck
           cp -r cfg out/cfg
           cp -r addons out/addons
+          cp -r platforms out/platforms
           file out/cppcheck
 
       - name: Collect binary (Windows)
@@ -174,6 +175,7 @@ jobs:
           Copy-Item $binary.FullName "out/cppcheck.exe"
           Copy-Item -Recurse cfg out/cfg
           Copy-Item -Recurse addons out/addons
+          Copy-Item -Recurse platforms out/platforms
 
       # ── QEMU cross builds (armv7, armv6) ─────────────────────────────
       - name: Build in QEMU (${{ matrix.qemu_arch }})
@@ -203,6 +205,7 @@ jobs:
             chmod +x cppcheck-src/out/cppcheck
             cp -r cppcheck-src/cfg cppcheck-src/out/cfg
             cp -r cppcheck-src/addons cppcheck-src/out/addons
+            cp -r cppcheck-src/platforms cppcheck-src/out/platforms
             file cppcheck-src/out/cppcheck
 
       # ── Upload ────────────────────────────────────────────────────────
