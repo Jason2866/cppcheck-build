@@ -3,9 +3,6 @@ name: Build & Release Cppcheck Binaries
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "*"
 
 permissions:
   contents: write
@@ -47,11 +44,11 @@ jobs:
             artifact: cppcheck-linux-arm64
             cross: false
 
-          - runner: macos-latest
+          - runner: macos-15-intel
             artifact: cppcheck-macos-x64
             cross: false
 
-          - runner: macos-latest
+          - runner: macos-15
             artifact: cppcheck-macos-arm64
             cross: false
 
@@ -168,6 +165,19 @@ jobs:
           cp -r platforms out/platforms
           file out/cppcheck
 
+      - name: Verify binary architecture (Unix native)
+        if: runner.os != 'Windows' && matrix.cross == false
+        working-directory: cppcheck-src
+        run: |
+          INFO="$(file out/cppcheck)"
+          echo "$INFO"
+          case "${{ matrix.artifact }}" in
+            cppcheck-macos-x64)   echo "$INFO" | grep -q 'x86_64' ;;
+            cppcheck-macos-arm64) echo "$INFO" | grep -q 'arm64' ;;
+            cppcheck-linux-x64)   echo "$INFO" | grep -Eq 'x86-64|x86_64' ;;
+            cppcheck-linux-arm64) echo "$INFO" | grep -Eq 'aarch64|arm64' ;;
+          esac
+
       - name: Collect binary (Windows)
         if: runner.os == 'Windows'
         working-directory: cppcheck-src
@@ -222,6 +232,16 @@ jobs:
             cp -r cppcheck-src/platforms cppcheck-src/out/platforms
             file cppcheck-src/out/cppcheck
 
+      - name: Verify binary architecture (QEMU)
+        if: matrix.cross == true
+        run: |
+          INFO="$(file cppcheck-src/out/cppcheck)"
+          echo "$INFO"
+          case "${{ matrix.artifact }}" in
+            cppcheck-linux-armv7) echo "$INFO" | grep -q 'ARM' ;;
+            cppcheck-linux-armv6) echo "$INFO" | grep -q 'ARM' ;;
+          esac
+
       # ── Upload ────────────────────────────────────────────────────────
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -233,7 +253,6 @@ jobs:
     name: Create Release
     needs: [get-version, build]
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -251,7 +270,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.get-version.outputs.version }}
           name: Cppcheck ${{ needs.get-version.outputs.version }} Binaries
           files: |
             artifacts/cppcheck-linux-x64.tar.gz
@@ -274,7 +293,7 @@ jobs:
             | `cppcheck-macos-arm64.tar.gz` | macOS Apple Silicon | native |
             | `cppcheck-windows-x64.zip` | Windows x64 | native + PCRE |
 
-            Each archive contains `cppcheck`, `cfg/`, and `addons/`.
+            Each archive contains `cppcheck`, `cfg/`, `addons/`, and `platforms/`.
             Ready for pioarduino!
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
