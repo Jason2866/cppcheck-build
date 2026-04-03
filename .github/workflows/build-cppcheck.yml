@@ -242,12 +242,9 @@ jobs:
         if: matrix.cross == true
         working-directory: cppcheck-src
         run: |
-          INFO="$(file out/cppcheck)"
-          echo "$INFO"
-          echo "$INFO" | grep -q 'ARM'
-          case "${{ matrix.artifact }}" in
-            cppcheck-linux-armv6) echo "$INFO" | grep -q 'Tag_CPU_arch: v6' ;;
-          esac
+          file out/cppcheck
+          file out/cppcheck | grep -q 'ARM'
+          arm-linux-gnueabihf-readelf -A out/cppcheck
 
       # ── Upload ────────────────────────────────────────────────────────
       - name: Upload build artifact
