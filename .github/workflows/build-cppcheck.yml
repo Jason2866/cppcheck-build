@@ -275,8 +275,7 @@ jobs:
               -DHAVE_RULES=ON \
               -DUSE_MATCHCOMPILER=yes \
               -DDISABLE_DMAKE=ON \
-              -DFILESDIR= \
-              $EXTRA_CMAKE_FLAGS
+              -DFILESDIR=
             cmake --build cppcheck-src/build --config Release --parallel
             mkdir -p cppcheck-src/out
             cp cppcheck-src/build/bin/cppcheck cppcheck-src/out/cppcheck
