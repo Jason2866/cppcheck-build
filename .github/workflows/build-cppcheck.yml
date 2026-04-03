@@ -213,8 +213,8 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=arm \
             -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
             -DCMAKE_CXX_COMPILER=arm-linux-gnueabihf-g++ \
-            -DCMAKE_C_FLAGS="-march=${{ matrix.cross_march }}" \
-            -DCMAKE_CXX_FLAGS="-march=${{ matrix.cross_march }} -O2" \
+            -DCMAKE_C_FLAGS="-march=${{ matrix.cross_march }} -O2 -DNDEBUG" \
+            -DCMAKE_CXX_FLAGS="-march=${{ matrix.cross_march }} -O2 -DNDEBUG" \
             -DCMAKE_EXE_LINKER_FLAGS="-march=${{ matrix.cross_march }}" \
             -DBUILD_GUI=OFF \
             -DHAVE_RULES=ON \
@@ -244,7 +244,12 @@ jobs:
         run: |
           file out/cppcheck
           file out/cppcheck | grep -q 'ARM'
-          arm-linux-gnueabihf-readelf -A out/cppcheck
+          ARCH_TAG=$(arm-linux-gnueabihf-readelf -A out/cppcheck | grep 'Tag_CPU_arch:' | head -1 | awk '{print $2}')
+          echo "Tag_CPU_arch: ${ARCH_TAG}"
+          case "${{ matrix.artifact }}" in
+            cppcheck-linux-armv7) test "$ARCH_TAG" = "v7" ;;
+            cppcheck-linux-armv6) test "$ARCH_TAG" = "v6" ;;
+          esac
 
       # ── Upload ────────────────────────────────────────────────────────
       - name: Upload build artifact
