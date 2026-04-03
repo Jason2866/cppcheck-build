@@ -61,13 +61,13 @@ jobs:
             artifact: cppcheck-linux-armv7
             cross: true
             cross_arch: armv7
-            cross_march: armv7-a
+            cross_march: armv7-a -mfpu=vfpv3-d16
 
           - runner: ubuntu-24.04-arm
             artifact: cppcheck-linux-armv6
             cross: true
             cross_arch: armv6
-            cross_march: armv6
+            cross_march: armv6 -mfpu=vfp
 
     env:
       CPPCHECK_REPO: https://github.com/danmar/cppcheck.git
